@@ -314,7 +314,7 @@ int getCharID(const char* s, void* pFont)
 }
 
 
-int gr_measure(const char *s)
+/*int gr_measure(const char *s)
 {
     GRFont* fnt = NULL;
     int n, l, off;
@@ -328,8 +328,20 @@ int gr_measure(const char *s)
     while(*(s + off)) {
         l = utf8_mbtowc(&ch, s+off, strlen(s + off));
 		n += fnt->cwidth[getCharID(s+off,NULL)];
-        off += l;
+		off += l;
     }
+    return n;
+}*/
+int gr_measure(const char *s)
+{
+    GRFont* fnt = NULL;
+    int n, l;
+    wchar_t ch;
+     if (!fnt)   fnt = gr_font;
+    l = utf8_mbtowc(&ch, s, strlen(s));
+	//fprintf(stdout, "unicode: %d\n", l);
+	if(l <= 0 ) return 0; 
+	n = fnt->cwidth[getCharID(s,NULL)];
     return n;
 }
 
@@ -504,7 +516,7 @@ static void gr_init_font(void)
     gr_font->cwidth = width;
     gr_font->cheight = height;
     gr_font->fontdata = font_data;
-    gr_font->ascent = font.cheight - 2;
+    gr_font->ascent = font.cheight;
     //gr_font->ascent = 0;
 }
 

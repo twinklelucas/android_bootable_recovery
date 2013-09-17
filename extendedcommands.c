@@ -651,8 +651,14 @@ int format_device(const char *device, const char *path, const char *fs_type) {
             // Our desired filesystem matches the one in fstab, respect v->length
             length = v->length;
         }
+#ifdef USE_MKE2FS_FORMAT
+		char ext4_cmd[PATH_MAX];
+		sprintf(ext4_cmd, "/sbin/mke2fs -T ext4 -b 4096 -m 0 -F %s", device);
+        int result = __system(ext4_cmd);
+#else
         reset_ext4fs_info();
         int result = make_ext4fs(device, length, v->mount_point, sehandle);
+#endif
         if (result != 0) {
             LOGE("format_volume: make_extf4fs failed on %s\n", device);
             return -1;
@@ -1465,6 +1471,7 @@ void create_fstab()
     write_fstab_root("/sd-ext", file);
     write_fstab_root("/external_sd", file);
 	write_fstab_root("/preload", file);
+	write_fstab_root("/efs", file);
     fclose(file);
     LOGI("Completed outputting fstab.\n");
 }

@@ -64,6 +64,12 @@ ifeq ($(ENABLE_LOKI_RECOVERY),true)
     compact_loki.c
 endif
 
+ifeq ($(BOARD_USE_MKE2FS_FORMAT),true)
+  LOCAL_CFLAGS += -DUSE_MKE2FS_FORMAT
+endif
+ifeq ($(findstring fontcn,$(BOARD_USE_CUSTOM_RECOVERY_FONT)),fontcn)
+  LOCAL_CFLAGS += -DUSE_CHINESE_FONT
+endif
 BOARD_RECOVERY_CHAR_WIDTH := $(shell echo $(BOARD_USE_CUSTOM_RECOVERY_FONT) | cut -d _  -f 2 | cut -d . -f 1 | cut -d x -f 1)
 BOARD_RECOVERY_CHAR_HEIGHT := $(shell echo $(BOARD_USE_CUSTOM_RECOVERY_FONT) | cut -d _  -f 2 | cut -d . -f 1 | cut -d x -f 2)
 RECOVERY_BUILD_DATE := $(shell date +"%Y%m%d")

@@ -872,8 +872,20 @@ void ui_print(const char *fmt, ...)
     gettimeofday(&lastupdate, NULL);
     if (text_rows > 0 && text_cols > 0) {
         char *ptr;
+#ifdef USE_CHINESE_FONT
+		int fwidth = 0, fwidth_sum = 0;
+#endif
         for (ptr = buf; *ptr != '\0'; ++ptr) {
+#ifdef USE_CHINESE_FONT
+			fwidth = gr_measure(&*ptr);
+			//LOGI("%d \n", fwidth);
+			fwidth_sum += fwidth;
+
+            if (*ptr == '\n' || fwidth_sum >= gr_fb_width()) {
+				fwidth_sum = 0;
+#else
             if (*ptr == '\n' || text_col >= text_cols) {
+#endif
                 text[text_row][text_col] = '\0';
                 text_col = 0;
                 text_row = (text_row + 1) % text_rows;
@@ -918,8 +930,9 @@ int ui_start_menu(const char** headers, char** items, int initial_selection) {
     if (text_rows > 0 && text_cols > 0) {
         for (i = 0; i < text_rows; ++i) {
             if (headers[i] == NULL) break;
-            strncpy(menu[i], headers[i], text_cols-1);
-            menu[i][text_cols-1] = '\0';
+            strncpy(menu[i], headers[i], sizeof(menu[i]));
+            //strncpy(menu[i], headers[i], text_cols-1);
+            //menu[i][text_cols-1] = '\0';
         }
         menu_top = i;
         for (; i < MENU_MAX_ROWS; ++i) {

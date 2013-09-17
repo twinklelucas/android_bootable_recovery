@@ -25,8 +25,8 @@ else:
 
 font_en = ImageFont.truetype('fonts/Droid Sans Mono.ttf', fontsize_en)
 width_en,height_en = font_en.getsize("W")
-height_spacing=8
-height_en=height_en+height_spacing
+height_spacing=4
+height_en=height_en+height_spacing*2
 print "fontsize: %d" %(fontsize_en)
 print "font en: %dx%d" %(width_en,height_en)
 im_en = Image.new('P', (width_en*len(s), height_en), 255)
@@ -34,7 +34,7 @@ text = ImageDraw.Draw(im_en)
 #print "painting ascii"
 size = ""
 for i in range(len(s)):
-	text.text((i*width_en, height_spacing/2), s[i], 0, font_en)
+	text.text((i*width_en, height_spacing), s[i], 0, font_en)
 im_en.save("data_en_%d_%dx%d.png"%(fontsize_en,width_en,height_en))
 print "generating png file data_en_%d_%dx%d.png"%(fontsize_en,width_en,height_en)
 

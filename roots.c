@@ -429,7 +429,13 @@ int format_volume(const char* volume) {
     }
 
     if (strcmp(v->fs_type, "ext4") == 0) {
+#ifdef USE_MKE2FS_FORMAT
+		char ext4_cmd[PATH_MAX];
+		sprintf(ext4_cmd, "/sbin/mke2fs -T ext4 -b 4096 -m 0 -F %s", v->blk_device);
+        int result = __system(ext4_cmd);
+#else
         int result = make_ext4fs(v->blk_device, v->length, volume, sehandle);
+#endif
         if (result != 0) {
             LOGE("format_volume: make_extf4fs failed on %s\n", v->blk_device);
             return -1;
