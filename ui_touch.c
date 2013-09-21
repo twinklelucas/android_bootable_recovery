@@ -930,9 +930,12 @@ int ui_start_menu(const char** headers, char** items, int initial_selection) {
     if (text_rows > 0 && text_cols > 0) {
         for (i = 0; i < text_rows; ++i) {
             if (headers[i] == NULL) break;
+#ifdef USE_CHINESE_FONT
             strncpy(menu[i], headers[i], sizeof(menu[i]));
-            //strncpy(menu[i], headers[i], text_cols-1);
-            //menu[i][text_cols-1] = '\0';
+#else
+            strncpy(menu[i], headers[i], text_cols-1);
+            menu[i][text_cols-1] = '\0';
+#endif
         }
         menu_top = i;
         for (; i < MENU_MAX_ROWS; ++i) {

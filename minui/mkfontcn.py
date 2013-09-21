@@ -45,10 +45,11 @@ font_en = ImageFont.truetype('fonts/Consolasyh.ttf', fontsize_en)
 width_en,height_en = font_en.getsize("W")
 font_cn = ImageFont.truetype('fonts/Consolasyh.ttf', fontsize_cn)
 width_cn,height_cn = font_cn.getsize(ch_u)
-height_spacing_en=6
-height_spacing_cn=6
-height_en=height_en+height_spacing_en*2
-height_cn=height_cn+height_spacing_cn*2
+top_margin=-2
+height_spacing_en=3
+height_spacing_cn=3
+height_en=height_en+height_spacing_en
+height_cn=height_cn+height_spacing_cn
 		
 print "fontsize: %d" %(fontsize_en)
 print "font en: %dx%d" %(width_en,height_en)
@@ -59,7 +60,7 @@ text = ImageDraw.Draw(im_en)
 #print "painting ascii"
 size = ""
 for i in range(len(s)):
-	text.text((0, i*height_en+height_spacing_en), s[i], 255, font_en)
+	text.text((0, i*height_en+top_margin), s[i], 255, font_en)
 im_en.save("data_en_%dx%d.png"%(width_en,height_en))
 print "generating png file data_en_%dx%d.png" %(width_en,height_en)
 #print "painting GB2312"
@@ -69,7 +70,7 @@ for i in range(0,count):
 	ch = c[i*2:i*2+2].decode("gb2312")
 	im_text = Image.new('P', (width_cn, height_cn), 0)
 	text = ImageDraw.Draw(im_text)
-	text.text((0,height_spacing_cn), ch, 255, font_cn)
+	text.text((0,top_margin), ch, 255, font_cn)
 	im_cn.paste(im_text,(0,i*height_cn))
 im_cn.save("data_cn_%dx%d.png"%(width_cn,height_cn))
 print "generating png file data_cn_%dx%d.png" %(width_cn,height_cn)
