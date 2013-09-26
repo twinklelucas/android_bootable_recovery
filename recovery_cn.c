@@ -335,7 +335,7 @@ static int
 erase_volume(const char *volume) {
     ui_set_background(BACKGROUND_ICON_INSTALLING);
     ui_show_indeterminate_progress();
-    ui_print("Formatting %s...\n", volume);
+    ui_print("正在格式化%s...\n", volume);
 
     if (strcmp(volume, "/cache") == 0) {
         // Any part of the log we'd copied to cache is now gone.
@@ -540,7 +540,7 @@ static int
 update_directory(const char* path, const char* unmount_when_done) {
     ensure_path_mounted(path);
 
-    const char* MENU_HEADERS[] = { "Choose a package to install:",
+    const char* MENU_HEADERS[] = { "选择一个刷机包安装:",
                                    path,
                                    "",
                                    NULL };
@@ -636,7 +636,7 @@ update_directory(const char* path, const char* unmount_when_done) {
             strlcat(new_path, "/", PATH_MAX);
             strlcat(new_path, item, PATH_MAX);
 
-            ui_print("\n-- Install %s ...\n", path);
+            ui_print("\n-- 安装%s ...\n", path);
             set_sdcard_update_bootloader_message();
             char* copy = copy_sideloaded_package(new_path);
             if (unmount_when_done != NULL) {
@@ -665,10 +665,10 @@ update_directory(const char* path, const char* unmount_when_done) {
 
 static void
 wipe_data(int confirm) {
-    if (confirm && !confirm_selection( "Confirm wipe of all user data?", "Yes - Wipe all user data"))
+    if (confirm && !confirm_selection( "确认清除所有的用户数据?", "是的,清除所有用户数据"))
         return;
 
-    ui_print("\n-- Wiping data...\n");
+    ui_print("\n-- 清除数据...\n");
     device_wipe_data();
     erase_volume("/data");
     erase_volume("/cache");
@@ -677,7 +677,7 @@ wipe_data(int confirm) {
     }
     erase_volume("/sd-ext");
     erase_volume(get_android_secure_path());
-    ui_print("Data wipe complete.\n");
+    ui_print("数据清除完毕.\n");
 }
 
 static void headless_wait() {
@@ -728,11 +728,11 @@ prompt_and_wait() {
                     break;
 
                 case ITEM_WIPE_CACHE:
-                    if (confirm_selection("Confirm wipe?", "Yes - Wipe Cache"))
+                    if (confirm_selection("确认清除?", "是的，清除cache"))
                     {
-                        ui_print("\n-- Wiping cache...\n");
+                        ui_print("\n-- 清除cache...\n");
                         erase_volume("/cache");
-                        ui_print("Cache wipe complete.\n");
+                        ui_print("Cache清除完毕.\n");
                         if (!ui_text_visible()) return;
                     }
                     break;
@@ -898,11 +898,7 @@ main(int argc, char **argv) {
     ui_init();
     ui_print(EXPAND(RECOVERY_VERSION));
 	//ui_print("("EXPAND(RECOVERY_BUILD_DATE)")\n");
-#ifndef USE_CHINESE_FONT
-	ui_print("\nCompiled by Xiaolu("EXPAND(RECOVERY_BUILD_DATE)")\n");
-#else
-	ui_print("\nXiaolu 编译("EXPAND(RECOVERY_BUILD_DATE)")\n");	
-#endif
+	ui_print("\nXiaolu 编译("EXPAND(RECOVERY_BUILD_DATE)")\n");
 	__system("/sbin/postrecoveryboot.sh");
     load_volume_table();
     process_volumes();
@@ -990,7 +986,7 @@ main(int argc, char **argv) {
 
     if (update_package != NULL) {
         status = install_package(update_package);
-        if (status != INSTALL_SUCCESS) ui_print("Installation aborted.\n");
+        if (status != INSTALL_SUCCESS) ui_print("安装中断.\n");
     } else if (wipe_data) {
         if (device_wipe_data()) status = INSTALL_ERROR;
         ignore_data_media_workaround(1);
@@ -998,10 +994,10 @@ main(int argc, char **argv) {
         ignore_data_media_workaround(0);
         if (has_datadata() && erase_volume("/datadata")) status = INSTALL_ERROR;
         if (wipe_cache && erase_volume("/cache")) status = INSTALL_ERROR;
-        if (status != INSTALL_SUCCESS) ui_print("Data wipe failed.\n");
+        if (status != INSTALL_SUCCESS) ui_print("数据清除失败.\n");
     } else if (wipe_cache) {
         if (wipe_cache && erase_volume("/cache")) status = INSTALL_ERROR;
-        if (status != INSTALL_SUCCESS) ui_print("Cache wipe failed.\n");
+        if (status != INSTALL_SUCCESS) ui_print("Cache清除失败.\n");
     } else if (sideload) {
         signature_check_enabled = 0;
         if (!headless)
@@ -1061,11 +1057,11 @@ main(int argc, char **argv) {
 
     sync();
     if(!poweroff) {
-        ui_print("Rebooting...\n");
+        ui_print("正在重启...\n");
         android_reboot(ANDROID_RB_RESTART, 0, 0);
     }
     else {
-        ui_print("Shutting down...\n");
+        ui_print("正在关机...\n");
         android_reboot(ANDROID_RB_POWEROFF, 0, 0);
     }
     return EXIT_SUCCESS;

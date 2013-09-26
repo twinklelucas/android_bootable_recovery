@@ -4,23 +4,28 @@ include $(CLEAR_VARS)
 commands_recovery_local_path := $(LOCAL_PATH)
 # LOCAL_CPP_EXTENSION := .c
 
+ifeq ($(findstring fontcn,$(BOARD_USE_CUSTOM_RECOVERY_FONT)),fontcn)
+  LOCAL_CFLAGS += -DUSE_CHINESE_FONT
+  src_suffix := _cn
+endif
+
 LOCAL_SRC_FILES := \
-    recovery.c \
+    recovery$(src_suffix).c \
     bootloader.c \
-    install.c \
+    install$(src_suffix).c \
     roots.c \
     ui_touch.c \
     mounts.c \
-    extendedcommands.c \
-    nandroid.c \
+    extendedcommands$(src_suffix).c \
+    nandroid$(src_suffix).c \
     ../../system/core/toolbox/reboot.c \
     ../../system/core/toolbox/dynarray.c \
     ../../system/core/toolbox/newfs_msdos.c \
-    firmware.c \
-    edifyscripting.c \
+    firmware$(src_suffix).c \
+    edifyscripting$(src_suffix).c \
     prop.c \
     default_recovery_ui.c \
-    adb_install.c \
+    adb_install$(src_suffix).c \
     verifier.c \
     ../../system/vold/vdc.c
 
@@ -67,9 +72,12 @@ endif
 ifeq ($(BOARD_USE_MKE2FS_FORMAT),true)
   LOCAL_CFLAGS += -DUSE_MKE2FS_FORMAT
 endif
-ifeq ($(findstring fontcn,$(BOARD_USE_CUSTOM_RECOVERY_FONT)),fontcn)
-  LOCAL_CFLAGS += -DUSE_CHINESE_FONT
+
+ifeq ($(RECOVERY_USE_MIGRATED_STORAGE),true)
+  LOCAL_CFLAGS += -DUSE_MIGRATED_STORAGE
 endif
+
+
 BOARD_RECOVERY_CHAR_WIDTH := $(shell echo $(BOARD_USE_CUSTOM_RECOVERY_FONT) | cut -d _  -f 2 | cut -d . -f 1 | cut -d x -f 1)
 BOARD_RECOVERY_CHAR_HEIGHT := $(shell echo $(BOARD_USE_CUSTOM_RECOVERY_FONT) | cut -d _  -f 2 | cut -d . -f 1 | cut -d x -f 2)
 RECOVERY_BUILD_DATE := $(shell date +"%Y%m%d")

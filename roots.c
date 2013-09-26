@@ -34,6 +34,7 @@
 #include "extendedcommands.h"
 
 #include "voldclient/voldclient.h"
+#include "cutils/properties.h"
 
 static struct fstab *fstab = NULL;
 
@@ -158,6 +159,9 @@ int try_mount(const char* device, const char* mount_point, const char* fs_type, 
 }
 
 int use_migrated_storage() {
+#ifdef USE_MIGRATED_STORAGE
+	return 1;
+#endif
     const MountedVolume* mv =
         find_mounted_volume_by_mount_point("/data");
     if (ensure_path_mounted("/data") != 0)
@@ -434,6 +438,7 @@ int format_volume(const char* volume) {
 		sprintf(ext4_cmd, "/sbin/mke2fs -T ext4 -b 4096 -m 0 -F %s", v->blk_device);
         int result = __system(ext4_cmd);
 #else
+		reset_ext4fs_info();
         int result = make_ext4fs(v->blk_device, v->length, volume, sehandle);
 #endif
         if (result != 0) {

@@ -306,7 +306,7 @@ static void draw_screen_locked(void)
             //sprintf(batt_text, "[%d%% %02D:%02D]", batt_level, current->tm_hour, current->tm_min);
             
             //if (now == NULL) { // just in case
-				sprintf(batt_text, "[%d%%]", batt_level);
+				sprintf(batt_text, " [%d%%]", batt_level);
 			//}
 
             gr_color(MENU_TEXT_COLOR);
@@ -946,7 +946,11 @@ int ui_start_menu(const char** headers, char** items, int initial_selection) {
         }
 
         if (gShowBackButton && !ui_root_menu) {
+#ifdef USE_CHINESE_FONT
+            strcpy(menu[i], " < 返回");
+#else
             strcpy(menu[i], " < Go Back");
+#endif
             ++i;
         }
 
