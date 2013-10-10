@@ -40,6 +40,9 @@
 
 #include "flashutils/flashutils.h"
 #include <libgen.h>
+#ifdef NEED_FIXCON
+#include <selinux/selinux.h>
+#endif
 
 void nandroid_generate_timestamp_path(char* backup_path)
 {
@@ -64,7 +67,7 @@ static void ensure_directory(const char* dir) {
 }
 
 static int print_and_error(const char* message) {
-    ui_print("%s", message);
+    ui_print("%s\n", message);
     return 1;
 }
 
@@ -319,6 +322,15 @@ int nandroid_backup_partition_extended(const char* backup_path, const char* moun
         return -2;
     }
     ret = backup_handler(mount_point, tmp, callback);
+#ifdef NEED_FIXCON
+	if (0 == strcmp(mount_point, "/data") || 0 == strcmp(mount_point, "/system") || 0 == strcmp(mount_point, "/cache"))
+	{ 
+		ui_print("备份selinux context...\n");
+		sprintf(tmp, "%s/%s.context", backup_path, name);
+		bakupcon_to_file(mount_point, tmp);
+		ui_print("备份selinux context完毕.\n");
+	}
+#endif
     if (umount_when_finished) {
         ensure_path_unmounted(mount_point);
     }
@@ -347,8 +359,8 @@ int nandroid_backup_partition(const char* backup_path, const char* root) {
             strcpy(tmp, "/proc/self/fd/1");
         else
             sprintf(tmp, "%s/%s.img", backup_path, name);
-        ui_print("正在备份%s镜像...\n", name);
 
+        ui_print("正在备份%s镜像...\n", name);
         if (0 != (ret = backup_raw_partition(vol->fs_type, vol->blk_device, tmp))) {
             ui_print("备份%s镜像时出错!", name);
             return ret;
@@ -541,7 +553,7 @@ static int do_tar_extract(char* command, int callback) {
 
 static int tar_gzip_extract_wrapper(const char* backup_file_image, const char* backup_path, int callback) {
     char tmp[PATH_MAX];
-    sprintf(tmp, "cd $(dirname %s) ; pigz -d -c %s* | tar xv ; exit $?", backup_path, backup_file_image);
+    sprintf(tmp, "cd $(dirname %s) ; cat %s* | pigz -d -c | tar xv ; exit $?", backup_path, backup_file_image);
 
     return do_tar_extract(tmp, callback);
 }
@@ -701,7 +713,7 @@ int nandroid_restore_partition_extended(const char* backup_path, const char* mou
 
     int callback = stat("/sdcard/clockworkmod/.hidenandroidprogress", &file_info) != 0;
 
-    ui_print("Restoring %s...\n", name);
+    ui_print("正在还原 %s...\n", name);
     if (backup_filesystem == NULL) {
         if (0 != (ret = format_volume(mount_point))) {
             ui_print("格式化%s时出错!\n", mount_point);
@@ -735,6 +747,16 @@ int nandroid_restore_partition_extended(const char* backup_path, const char* mou
         ui_print("还原%s时出错!\n", mount_point);
         return ret;
     }
+#ifdef NEED_FIXCON
+	if (0 == strcmp(mount_point, "/data") || 0 == strcmp(mount_point, "/system") || 0 == strcmp(mount_point, "/cache"))
+	{ 
+		ui_print("恢复selinux context...\n");
+		name = basename(mount_point);
+		sprintf(tmp, "%s/%s.context", backup_path, name);
+		restorecon_from_file(tmp);		
+		ui_print("恢复完毕.\n");
+	}
+#endif
 
     if (umount_when_finished) {
         ensure_path_unmounted(mount_point);
@@ -769,7 +791,7 @@ int nandroid_restore_partition(const char* backup_path, const char* root) {
 
         ui_print("还原%s镜像...\n", name);
         if (0 != (ret = restore_raw_partition(vol->fs_type, vol->blk_device, tmp))) {
-            ui_print("刷入%s镜像时出错!", name);
+            ui_print("刷入%s镜像时出错!\n", name);
             return ret;
         }
         return 0;
@@ -786,19 +808,23 @@ int nandroid_restore(const char* backup_path, int restore_boot, int restore_syst
     if (ensure_path_mounted(backup_path) != 0)
         return print_and_error("Can't mount backup path\n");
 
-    char tmp[PATH_MAX];
-
-    ui_print("检验文件md5值...\n");
-    sprintf(tmp, "cd %s && md5sum -c nandroid.md5", backup_path);
-    if (0 != __system(tmp))
-        return print_and_error("MD5校验失败!\n");
-
+	struct stat s;
+	char tmp[PATH_MAX];
+	ensure_path_mounted("/sdcard");
+    if (0 == stat("/sdcard/clockworkmod/.no_md5sum", &s))
+		ui_print("跳过文件MD5检验...\n");
+	else {
+	    ui_print("检验文件md5值...\n");
+	    sprintf(tmp, "cd %s && md5sum -c nandroid.md5", backup_path);
+	    if (0 != __system(tmp))
+	        return print_and_error("MD5校验失败!\n");
+	}
     int ret;
 
     if (restore_boot && NULL != volume_for_path("/boot") && 0 != (ret = nandroid_restore_partition(backup_path, "/boot")))
         return ret;
 
-    struct stat s;
+
     Volume *vol = volume_for_path("/wimax");
     if (restore_wimax && vol != NULL && 0 == stat(vol->blk_device, &s))
     {
@@ -971,7 +997,7 @@ int nandroid_main(int argc, char** argv)
             return nandroid_usage();
         return nandroid_restore(argv[2], 1, 1, 1, 1, 1, 0);
     }
-    
+
     if (strcmp("dump", argv[1]) == 0)
     {
         if (argc != 3)
@@ -988,3 +1014,79 @@ int nandroid_main(int argc, char** argv)
 
     return nandroid_usage();
 }
+#ifdef NEED_FIXCON
+int bakupcon_to_file(const char *pathname, const char *filename)
+{
+	struct stat sb;
+	char* filecontext = NULL;
+	char* tmp = NULL;
+	FILE * f = NULL;
+	if (lstat(pathname, &sb) < 0)
+		return -1;
+
+	if (lgetfilecon(pathname, &filecontext) < 0)
+		fprintf(stderr, "can't get %s context\n", filename);
+	else
+	{
+		if ((f = fopen(filename, "a+")) == NULL) 
+		{
+			fprintf(stderr, "can't open %s\n", filename);
+			return -1;
+		}
+		//fprintf(f, "chcon -h %s '%s'\n", filecontext, pathname);
+		fprintf(f, "%s\t%s\n", pathname, filecontext);
+		fclose(f);
+	}
+
+	DIR *dir = opendir(pathname);
+	if (dir == NULL)
+		return -1;
+
+	struct dirent *entry;
+	while ((entry = readdir(dir)) != NULL) {
+		char *entryname;
+		if (!strcmp(entry->d_name, ".."))
+			continue;
+		if (!strcmp(entry->d_name, "."))
+			continue;
+		if (asprintf(&entryname, "%s/%s", pathname, entry->d_name) == -1)
+			continue;
+		if (!strstr(entryname, "/data/media/") && 
+			!strstr(entryname, "/data/data/com.google.android.music/files/"))
+			bakupcon_to_file(entryname, filename);
+
+		free(entryname);
+	}
+
+	if (closedir(dir) < 0)
+		return -1;
+
+	return 0;
+}
+
+int restorecon_from_file(const char *filename)
+{
+	FILE * f = NULL;
+	if ((f = fopen(filename, "r")) == NULL) 
+	{
+		fprintf(stderr, "can't open %s\n", filename);
+		return -1;
+	}
+    char linebuf[4096];
+    while(fgets(linebuf, 4096, f)) {
+		if (linebuf[strlen(linebuf)-1] == '\n') 
+			linebuf[strlen(linebuf)-1] = '\0';
+
+		char *p1, *p2;
+		char *buf = linebuf;
+
+		p1 = strtok(buf, "\t"); 
+		p2 = strtok(NULL, "\t"); 
+		fprintf(stdout, "%s %s\n", p1, p2);
+		if (lsetfilecon(p1, p2) < 0)
+			fprintf(stderr, "can't setfilecon %s\n", p1);
+    }
+	fclose(f);
+	return 0;
+}
+#endif

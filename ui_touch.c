@@ -122,6 +122,9 @@ static int menu_top = 0, menu_items = 0, menu_sel = 0;
 static int menu_show_start = 0;             // this is line which menu display is starting at
 static int max_menu_rows;
 
+static int cur_rainbow_color = 0;
+static int gRainbowMode = 0;
+
 // Key event input queue
 static pthread_mutex_t key_queue_mutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t key_queue_cond = PTHREAD_COND_INITIALIZER;
@@ -245,6 +248,7 @@ static void draw_virtualkeys_locked()
 static void draw_text_line(int row, const char* t, int align) {
     int col = 0;
     if (t[0] != '\0') {
+		if (ui_get_rainbow_mode()) ui_rainbow_mode();
         int length = strnlen(t, MENU_MAX_COLS) * CHAR_WIDTH;
         switch(align)
         {
@@ -263,8 +267,7 @@ static void draw_text_line(int row, const char* t, int align) {
     }
 }
 
-//#define MENU_TEXT_COLOR 66, 157, 208, 255
-//#define NORMAL_TEXT_COLOR 34, 117, 175, 255
+//#define MENU_TEXT_COLOR 255, 160, 49, 255
 #define MENU_TEXT_COLOR 0, 191, 255, 255
 #define NORMAL_TEXT_COLOR 200, 200, 200, 255
 #define HEADER_TEXT_COLOR NORMAL_TEXT_COLOR
@@ -466,7 +469,6 @@ static int input_callback(int fd, short revents, void *data)
     int ret;
     int fake_key = 0;
     gr_surface surface = gVirtualKeys;
-
     ret = ev_get_input(fd, revents, &ev);
     if (ret)
         return -1;
@@ -557,7 +559,7 @@ static int input_callback(int fd, short revents, void *data)
 				touch_x = touch_x_rel * gr_fb_width();
 				if(old_x == 0) break; 
 				diff_x += touch_x - old_x;
-				//if(touch_y < (gr_fb_height() - gr_get_height(surface))) {
+				if(touch_y < (gr_fb_height() - gr_get_height(surface))) {
 					int diff_w=gr_fb_width()/4;
 					if(diff_x > diff_w) {
 						slide_right = 1;
@@ -566,7 +568,7 @@ static int input_callback(int fd, short revents, void *data)
 						slide_left = 1;
 						reset_gestures();
 					}
-				//} else input_buttons();
+				} else input_buttons();
 				break;
 			case ABS_MT_POSITION_Y:
 				if (s_tracking_id == -1) break;
@@ -1057,13 +1059,15 @@ void ui_cancel_wait_key() {
 
 extern int volumes_changed();
 
+// delay in seconds to refresh clock and USB plugged volumes
+#define REFRESH_TIME_USB_INTERVAL 5
 int ui_wait_key()
 {
     if (boardEnableKeyRepeat) return ui_wait_key_with_repeat();
     pthread_mutex_lock(&key_queue_mutex);
     int timeouts = UI_WAIT_KEY_TIMEOUT_SEC;
 
-    // Time out after 1 second to catch volume changes, and loop for
+    // Time out after REFRESH_TIME_USB_INTERVAL seconds to catch volume changes, and loop for
     // UI_WAIT_KEY_TIMEOUT_SEC to restart a device not connected to USB
     do {
         struct timeval now;
@@ -1071,7 +1075,7 @@ int ui_wait_key()
         gettimeofday(&now, NULL);
         timeout.tv_sec = now.tv_sec;
         timeout.tv_nsec = now.tv_usec * 1000;
-        timeout.tv_sec += 1;
+        timeout.tv_sec += REFRESH_TIME_USB_INTERVAL;
 
         int rc = 0;
         while (key_queue_len == 0 && rc != ETIMEDOUT) {
@@ -1082,8 +1086,8 @@ int ui_wait_key()
                 return REFRESH;
             }
         }
-        timeouts--;
-    } while ((timeouts || usb_connected()) && key_queue_len == 0);
+        timeouts -= REFRESH_TIME_USB_INTERVAL;
+    } while ((timeouts > 0 || usb_connected()) && key_queue_len == 0);
 
     int key = -1;
     if (key_queue_len > 0) {
@@ -1113,21 +1117,31 @@ int ui_wait_key_with_repeat()
 
     // Loop to wait for more keys.
     do {
+        int timeouts = UI_WAIT_KEY_TIMEOUT_SEC;
+        int rc = 0;
         struct timeval now;
         struct timespec timeout;
-        gettimeofday(&now, NULL);
-        timeout.tv_sec = now.tv_sec;
-        timeout.tv_nsec = now.tv_usec * 1000;
-        timeout.tv_sec += UI_WAIT_KEY_TIMEOUT_SEC;
-
-        int rc = 0;
         pthread_mutex_lock(&key_queue_mutex);
-        while (key_queue_len == 0 && rc != ETIMEDOUT) {
-            rc = pthread_cond_timedwait(&key_queue_cond, &key_queue_mutex,
-                                        &timeout);
+        while (key_queue_len == 0 && timeouts > 0) {
+            gettimeofday(&now, NULL);
+            timeout.tv_sec = now.tv_sec;
+            timeout.tv_nsec = now.tv_usec * 1000;
+            timeout.tv_sec += REFRESH_TIME_USB_INTERVAL;
+
+            rc = 0;
+            while (key_queue_len == 0 && rc != ETIMEDOUT) {
+                rc = pthread_cond_timedwait(&key_queue_cond, &key_queue_mutex,
+                                            &timeout);
+                if (volumes_changed()) {
+                    pthread_mutex_unlock(&key_queue_mutex);
+                    return REFRESH;
+                }
+            }
+            timeouts -= REFRESH_TIME_USB_INTERVAL;
         }
         pthread_mutex_unlock(&key_queue_mutex);
-        if (rc == ETIMEDOUT && !usb_connected() && !volumes_changed()) {
+
+        if (rc == ETIMEDOUT && !usb_connected()) {
             return -1;
         }
 
@@ -1247,6 +1261,31 @@ void ui_increment_frame() {
         (gInstallingFrame + 1) % ui_parameters.installing_frames;
 }
 
+int ui_get_rainbow_mode() {
+    return gRainbowMode;
+}
+
+void ui_rainbow_mode() {
+    static int colors[] = { 255, 0, 0,        // red
+                            255, 127, 0,      // orange
+                            255, 255, 0,      // yellow
+                            0, 255, 0,        // green
+                            60, 80, 255,      // blue
+                            143, 0, 255 };    // violet
+
+    gr_color(colors[cur_rainbow_color], colors[cur_rainbow_color+1], colors[cur_rainbow_color+2], 255);
+    cur_rainbow_color += 3;
+    if (cur_rainbow_color >= sizeof(colors)/sizeof(colors[0])) cur_rainbow_color = 0;
+}
+
+void ui_set_rainbow_mode(int rainbowMode) {
+    gRainbowMode = rainbowMode;
+
+    pthread_mutex_lock(&gUpdateMutex);
+    update_screen_locked();
+    pthread_mutex_unlock(&gUpdateMutex);
+}
+
 int get_batt_stats(void)
 {
     static int level = -1;
@@ -1270,7 +1309,7 @@ int get_batt_stats(void)
 
 int input_buttons()
 {
-	int final_code = 0; 	
+	int final_code = 0;
 	gr_surface surface = gVirtualKeys;
 	if (touch_y >= (gr_fb_height() - gr_get_height(surface)) && touch_x > 0) {   
 		int start_draw = 0;
@@ -1292,16 +1331,23 @@ int input_buttons()
 		    final_code = KEY_BACK;
 		    start_draw = (keywidth * 2) + keyoffset + 1;
 		    end_draw = (keywidth * 3) + keyoffset;
+			//if (ui_root_menu) return final_code;
 		} else if (touch_x < ((keywidth * 4) + keyoffset + 1)) {
 		    //enter key
 		    final_code = KEY_POWER;
 		    start_draw = (keywidth * 3) + keyoffset + 1;
 		    end_draw = (keywidth * 4) + keyoffset;
+		} else
+		{
+			return final_code;
 		}
 		pthread_mutex_lock(&gUpdateMutex);
-		//gr_color(0, 0, 0, 255);     // clear old touch points
-		//gr_fill(0, gr_fb_height()-gr_get_height(surface)-2, start_draw-1, gr_fb_height()-gr_get_height(surface));
-		//gr_fill(end_draw+1, gr_fb_height()-gr_get_height(surface)-2, gr_fb_width(), gr_fb_height()-gr_get_height(surface));
+        //gr_color(0, 0, 0, 255);     // clear old touch points
+        //gr_fill(0, gr_fb_height()-gr_get_height(surface)-2, start_draw-1, gr_fb_height()-gr_get_height(surface));
+        //gr_fill(end_draw+1, gr_fb_height()-gr_get_height(surface)-2, gr_fb_width(), gr_fb_height()-gr_get_height(surface));
+        //gr_color(MENU_TEXT_COLOR);
+        //gr_fill(start_draw, gr_fb_height()-gr_get_height(surface)-2, end_draw, gr_fb_height()-gr_get_height(surface));
+        //gr_flip();
 		gr_color(MENU_TEXT_COLOR);
 		gr_fill(start_draw, gr_fb_height()-gr_get_height(surface), end_draw, gr_fb_height());
 		gr_flip();

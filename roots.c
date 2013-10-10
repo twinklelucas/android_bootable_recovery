@@ -34,7 +34,6 @@
 #include "extendedcommands.h"
 
 #include "voldclient/voldclient.h"
-#include "cutils/properties.h"
 
 static struct fstab *fstab = NULL;
 
@@ -301,16 +300,10 @@ int ensure_path_mounted_at_mount_point(const char* path, const char* mount_point
     } else {
         // let's try mounting with the mount binary and hope for the best.
         char mount_cmd[PATH_MAX];
-        // case called by ensure_path_mounted_at_mount_point("/emmc", "/sdcard") in edifyscripting.c
-        // for sdcard marker check on devices where /sdcard is external storage
-        if (strcmp(v->mount_point, mount_point) != 0)
-            sprintf(mount_cmd, "mount %s %s", v->blk_device, mount_point);
-        else
-            sprintf(mount_cmd, "mount %s", mount_point);
+        sprintf(mount_cmd, "mount %s", mount_point);
         return __system(mount_cmd);
     }
 
-    LOGE("unknown fs_type \"%s\" for %s\n", v->fs_type, mount_point);
     return -1;
 }
 
@@ -447,6 +440,17 @@ int format_volume(const char* volume) {
         }
         return 0;
     }
+
+#ifdef USE_F2FS
+    if (strcmp(v->fs_type, "f2fs") == 0) {
+        int result = make_f2fs_main(v->blk_device, v->mount_point);
+        if (result != 0) {
+            LOGE("format_volume: mkfs.f2f2 failed on %s\n", v->blk_device);
+            return -1;
+        }
+        return 0;
+    }
+#endif
 
 #if 0
     LOGE("format_volume: fs_type \"%s\" unsupported\n", v->fs_type);

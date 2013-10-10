@@ -54,7 +54,6 @@ int signature_check_enabled = 0;
 int loki_support_enabled = 1;
 #endif
 int script_assert_enabled = 1;
-static const char *SDCARD_UPDATE_FILE = "update.zip";
 
 int
 get_filtered_menu_selection(const char** headers, char** items, int menu_only, int initial_selection, int items_count) {
@@ -304,7 +303,7 @@ char** gather_files(const char* directory, const char* fileExtensionOrDirectory,
     }
 
     if(closedir(dir) < 0) {
-        LOGE("关闭目录失败.");
+        LOGE("关闭目录失败.\n");
     }
 
     if (total==0) {
@@ -660,7 +659,7 @@ int format_device(const char *device, const char *path, const char *fs_type) {
         int result = make_ext4fs(device, length, v->mount_point, sehandle);
 #endif
         if (result != 0) {
-            LOGE("format_volume: make_extf4fs failed on %s\n", device);
+            LOGE("format_volume: make_ext4fs failed on %s\n", device);
             return -1;
         }
         return 0;
@@ -727,9 +726,8 @@ int format_unknown_device(const char *device, const char* path, const char *fs_t
 
     static char tmp[PATH_MAX];
     if (strcmp(path, "/data") == 0) {
-        //sprintf(tmp, "cd /data ; for f in $(ls -a | grep -v ^media$); do rm -rf $f; done");
-        //__system(tmp);
-		__system("cd /data ; for f in $(ls -a | grep -v '^media$'); do rm -rf \"$f\"; done");
+        sprintf(tmp, "cd /data ; for f in $(ls -a | grep -v ^media$); do rm -rf $f; done");
+        __system(tmp);
         // if the /data/media sdcard has already been migrated for android 4.2,
         // prevent the migration from happening again by writing the .layout_version
         struct stat st;
@@ -749,9 +747,9 @@ int format_unknown_device(const char *device, const char* path, const char *fs_t
         }
     }
     else {
-        sprintf(tmp, "rm -rf ""%s/*""", path);
+        sprintf(tmp, "rm -rf %s/*", path);
         __system(tmp);
-        sprintf(tmp, "rm -rf ""%s/.*""", path);
+        sprintf(tmp, "rm -rf %s/.*", path);
         __system(tmp);
     }
 
@@ -772,6 +770,7 @@ typedef struct {
 typedef struct {
     char txt[255];
     char path[PATH_MAX];
+    char type[255];
 } FormatMenuEntry;
 
 int is_safe_to_format(char* name)
@@ -838,6 +837,7 @@ int show_partition_menu()
             if (is_safe_to_format(v->mount_point)) {
                 sprintf(format_menu[formatable_volumes].txt, "格式化 %s", v->mount_point);
                 sprintf(format_menu[formatable_volumes].path, "%s", v->mount_point);
+                sprintf(format_menu[formatable_volumes].type, "%s", v->fs_type);
                 ++formatable_volumes;
             }
         }
@@ -845,6 +845,7 @@ int show_partition_menu()
         {
             sprintf(format_menu[formatable_volumes].txt, "格式化 %s", v->mount_point);
             sprintf(format_menu[formatable_volumes].path, "%s", v->mount_point);
+            sprintf(format_menu[formatable_volumes].type, "%s", v->fs_type);
             ++formatable_volumes;
         }
     }
@@ -917,6 +918,13 @@ int show_partition_menu()
             FormatMenuEntry* e = &format_menu[chosen_item];
 
             sprintf(confirm_string, "%s - %s", e->path, confirm_format);
+
+            // support user choice fstype when formatting external storage
+            // ensure fstype==auto because most devices with internal vfat storage cannot be formatted to other types
+            if (strcmp(e->type, "auto") == 0) {
+                format_sdcard(e->path);
+                continue;
+            }
 
             if (!confirm_selection(confirm_string, confirm))
                 continue;
@@ -1209,6 +1217,71 @@ out:
     return chosen_item;
 }
 
+void format_sdcard(const char* volume) {
+    // datamedia check is probably useless, but added for extra care
+    if (!can_partition(volume) || is_data_media_volume_path(volume))
+        return;
+
+    char* headers[] = {"格式化:", volume, "", NULL };
+
+    static char* list[] = { "default",
+                            "vfat",
+                            "exfat",
+                            "ntfs",
+                            "ext4",
+                            "ext3",
+                            "ext2",
+                            NULL
+    };
+
+    int ret = -1;
+    char cmd[PATH_MAX];
+    int chosen_item = get_menu_selection(headers, list, 0, 0);
+    if (chosen_item == GO_BACK)
+        return;
+    if (!confirm_selection( "确认格式化?", "是的 - 格式化"))
+        return;
+
+    Volume *v = volume_for_path(volume);
+    if (ensure_path_unmounted(v->mount_point) != 0)
+        return;
+
+    switch (chosen_item)
+    {
+        case 0:
+            ret = format_volume(v->mount_point);
+            break;
+        case 1:
+        case 2:
+        case 3:
+        case 4:
+            if (fs_mgr_is_voldmanaged(v)) {
+                ret = vold_custom_format_volume(v->mount_point, list[chosen_item], 1) == CommandOkay ? 0 : -1;
+            } else if (strcmp(list[chosen_item], "vfat") == 0) {
+                sprintf(cmd, "/sbin/newfs_msdos -F 32 -O android -c 8 %s", v->blk_device);
+                ret = __system(cmd);
+            } else if (strcmp(list[chosen_item], "exfat") == 0) {
+                sprintf(cmd, "/sbin/mkfs.exfat %s", v->blk_device);
+                ret = __system(cmd);
+            } else if (strcmp(list[chosen_item], "ntfs") == 0) {
+                sprintf(cmd, "/sbin/mkntfs -f %s", v->blk_device);
+                ret = __system(cmd);
+            } else if (strcmp(list[chosen_item], "ext4") == 0) {
+                ret = make_ext4fs(v->blk_device, v->length, volume, sehandle);
+            }
+            break;
+        case 5:
+        case 6:
+            ret = format_unknown_device(v->blk_device, v->mount_point, list[chosen_item]);
+            break;
+    }
+
+    if (ret)
+        ui_print("Could not format %s (%s)\n", volume, list[chosen_item]);
+    else
+        ui_print("Done formatting %s (%s)\n", volume, list[chosen_item]);
+}
+
 static void partition_sdcard(const char* volume) {
     if (!can_partition(volume)) {
         ui_print("Can't partition device: %s\n", volume);
@@ -1283,7 +1356,7 @@ int can_partition(const char* volume) {
         return 0;
     }
     
-    if (strcmp(vol->fs_type, "vfat") != 0) {
+    if (strcmp(vol->fs_type, "auto") != 0) {
         LOGI("Can't partition non-vfat: %s\n", vol->fs_type);
         return 0;
     }
@@ -1303,7 +1376,7 @@ int show_advanced_menu()
     char buf[80];
     int i = 0, j = 0, chosen_item = 0;
     /* Default number of entries if no compile-time extras are added */
-    static char* list[MAX_NUM_MANAGED_VOLUMES + FIXED_ADVANCED_ENTRIES + 2];
+    static char* list[MAX_NUM_MANAGED_VOLUMES + FIXED_ADVANCED_ENTRIES + 1];
 
     char* primary_path = get_primary_storage_path();
     char** extra_paths = get_extra_storage_paths();
@@ -1314,7 +1387,7 @@ int show_advanced_menu()
                                 NULL
     };
 
-    memset(list, 0, MAX_NUM_MANAGED_VOLUMES + FIXED_ADVANCED_ENTRIES + 2);
+    memset(list, 0, MAX_NUM_MANAGED_VOLUMES + FIXED_ADVANCED_ENTRIES + 1);
 
     list[0] = "重启到recovery";
 
@@ -1335,8 +1408,9 @@ int show_advanced_menu()
     list[7] = "loki支持开关";
 #endif
 
+    char list_prefix[] = "分区: ";
     if (can_partition(primary_path)) {
-        sprintf(buf, "给%s分区", primary_path);
+        sprintf(buf, "%s%s", list_prefix, primary_path);
         list[FIXED_ADVANCED_ENTRIES] = strdup(buf);
         j++;
     }
@@ -1344,12 +1418,13 @@ int show_advanced_menu()
     if (extra_paths != NULL) {
         for (i = 0; i < num_extra_volumes; i++) {
             if (can_partition(extra_paths[i])) {
-                sprintf(buf, "给%s分区", extra_paths[i]);
+                sprintf(buf, "%s%s", list_prefix, extra_paths[i]);
                 list[FIXED_ADVANCED_ENTRIES + j] = strdup(buf);
                 j++;
             }
         }
     }
+    list[FIXED_ADVANCED_ENTRIES + j] = NULL;
 
     for (;;)
     {
@@ -1420,20 +1495,14 @@ int show_advanced_menu()
                 toggle_loki_support();
                 break;
 #endif
-            case FIXED_ADVANCED_ENTRIES:
-                partition_sdcard(primary_path);
-                break;
             default:
-                if (chosen_item >= (FIXED_ADVANCED_ENTRIES+1)) {
-                    partition_sdcard(list[chosen_item] + 10);
-                }
+                partition_sdcard(list[chosen_item] + strlen(list_prefix));
                 break;
         }
     }
-    free(list[FIXED_ADVANCED_ENTRIES]);
-    if (extra_paths != NULL) {
-        for (; j >= 0; --j)
-            free(list[FIXED_ADVANCED_ENTRIES + 1 + j]);
+
+    for (; j > 0; --j) {
+        free(list[FIXED_ADVANCED_ENTRIES + j - 1]);
     }
     return chosen_item;
 }
