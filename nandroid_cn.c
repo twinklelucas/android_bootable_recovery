@@ -329,8 +329,11 @@ int nandroid_backup_partition_extended(const char* backup_path, const char* moun
     {
         ui_print("备份selinux context...\n");
         sprintf(tmp, "%s/%s.context", backup_path, name);
-        bakupcon_to_file(mount_point, tmp);
-        ui_print("备份selinux context完毕.\n");
+        int result = bakupcon_to_file(mount_point, tmp);
+        if (result < 0)
+            LOGE("备份selinux context出错!\n");
+        else
+            ui_print("备份selinux context完毕.\n");
     }
 #endif
     if (umount_when_finished) {
@@ -757,9 +760,9 @@ int nandroid_restore_partition_extended(const char* backup_path, const char* mou
         ui_print("恢复selinux context...\n");
         name = basename(mount_point);
         sprintf(tmp, "%s/%s.context", backup_path, name);
-        if (0 != (ret = restorecon_from_file(tmp))) {
+        if ((ret = restorecon_from_file(tmp)) < 0) {
             ui_print("从%s.context恢复出错,使用常规restorecon.\n", name);
-            if (0 != (ret = restorecon_recursive(mount_point))) {
+            if ((ret = restorecon_recursive(mount_point)) < 0) {
                 ui_print("restorecon恢复%s出错!\n", mount_point); 
                 return ret;
             }
@@ -1038,12 +1041,12 @@ int bakupcon_to_file(const char *pathname, const char *filename)
 
     if (lgetfilecon(pathname, &filecontext) < 0) {
         LOGW("(bakupcon_to_file)can't get %s context\n", pathname);
-        ret = -1;
+        ret = 1;
     }
     else {
         if ((f = fopen(filename, "a+")) == NULL)
         {
-            LOGE("(bakupcon_to_file)无法打开文件%s\n", filename);
+            LOGE("(bakupcon_to_file)无法创建文件%s\n", filename);
             return -1;
         }
         //fprintf(f, "chcon -h %s '%s'\n", filecontext, pathname);
@@ -1067,7 +1070,7 @@ int bakupcon_to_file(const char *pathname, const char *filename)
             continue;
         if (asprintf(&entryname, "%s/%s", pathname, entry->d_name) == -1)
             continue;
-        if (strncmp(entryname, "/data/media/", 12) == 0 ||
+        if ((is_data_media() && (strncmp(entryname, "/data/media/", 12) == 0)) ||
             strncmp(entryname, "/data/data/com.google.android.music/files", 41) ==0 )
 			continue;
 
@@ -1098,10 +1101,10 @@ int restorecon_from_file(const char *filename)
 
         p1 = strtok(buf, "\t");
         p2 = strtok(NULL, "\t");
-        fprintf(stdout, "%s %s\n", p1, p2);
+        LOGI("%s %s\n", p1, p2);
         if (lsetfilecon(p1, p2) < 0) {
             LOGW("(restorecon_from_file)can't setfilecon %s\n", p1);
-            ret = -1;
+            ret = 1;
         }
     }
     fclose(f);
@@ -1119,7 +1122,7 @@ int restorecon_recursive(const char *pathname)
 
     if (selinux_android_restorecon(pathname) < 0) {
         LOGW("Restorecon: error restoring context for %s.\n", pathname);
-        ret = -1;
+        ret = 1;
     }
 
     //skip symlink
@@ -1138,7 +1141,7 @@ int restorecon_recursive(const char *pathname)
             continue;
         if (asprintf(&entryname, "%s/%s", pathname, entry->d_name) == -1)
             continue;
-        if (strncmp(entryname, "/data/media/", 12) == 0 ||
+        if ((is_data_media() && (strncmp(entryname, "/data/media/", 12) == 0)) ||
             strncmp(entryname, "/data/data/com.google.android.music/files", 41) ==0 )
 			continue;
 

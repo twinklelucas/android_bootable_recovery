@@ -327,10 +327,13 @@ int nandroid_backup_partition_extended(const char* backup_path, const char* moun
         0 == strcmp(mount_point, "/system") ||
         0 == strcmp(mount_point, "/cache"))
     {
-        ui_print("backing up selinux context...\n");
+        ui_print("Backing up selinux context...\n");
         sprintf(tmp, "%s/%s.context", backup_path, name);
-        bakupcon_to_file(mount_point, tmp);
-        ui_print("backup selinux context completed.\n");
+        int result = bakupcon_to_file(mount_point, tmp);
+        if (result < 0)
+            LOGE("Backup selinux context error!\n");
+        else
+            ui_print("Backup selinux context completed.\n");
     }
 #endif
     if (umount_when_finished) {
@@ -754,17 +757,17 @@ int nandroid_restore_partition_extended(const char* backup_path, const char* mou
         0 == strcmp(mount_point, "/system") ||
         0 == strcmp(mount_point, "/cache"))
     {
-        ui_print("restore selinux context...\n");
+        ui_print("Restore selinux context...\n");
         name = basename(mount_point);
         sprintf(tmp, "%s/%s.context", backup_path, name);
-        if (0 != (ret = restorecon_from_file(tmp))) {
-            ui_print("restorecon from %s.context error, use regular restorecon.\n", name);
-            if (0 != (ret = restorecon_recursive(mount_point))) {
-                ui_print("restorecon %s error!\n", mount_point); 
+        if ((ret = restorecon_from_file(tmp)) < 0) {
+            ui_print("Restorecon from %s.context error, use regular restorecon.\n", name);
+            if ((ret = restorecon_recursive(mount_point)) < 0) {
+                LOGE("Restorecon %s error!\n", mount_point); 
                 return ret;
             }
         }
-        ui_print("restorecon completed.\n");
+        ui_print("Restorecon completed.\n");
     }
 #endif
 
@@ -1032,18 +1035,18 @@ int bakupcon_to_file(const char *pathname, const char *filename)
     char* filecontext = NULL;
     FILE * f = NULL;
     if (lstat(pathname, &sb) < 0) {
-        LOGW("Bakupcon: not found %s.\n", pathname);
+        LOGW("(bakupcon_to_file)not found %s.\n", pathname);
         return -1;
     }
 
     if (lgetfilecon(pathname, &filecontext) < 0) {
         LOGW("(bakupcon_to_file)can't get %s context\n", pathname);
-        ret = -1;
+        ret = 1;
     }
     else {
         if ((f = fopen(filename, "a+")) == NULL)
         {
-            LOGE("(bakupcon_to_file)can't open %s\n", filename);
+            LOGE("(bakupcon_to_file)can't create %s\n", filename);
             return -1;
         }
         //fprintf(f, "chcon -h %s '%s'\n", filecontext, pathname);
@@ -1067,7 +1070,7 @@ int bakupcon_to_file(const char *pathname, const char *filename)
             continue;
         if (asprintf(&entryname, "%s/%s", pathname, entry->d_name) == -1)
             continue;
-        if (strncmp(entryname, "/data/media/", 12) == 0 ||
+        if ((is_data_media() && (strncmp(entryname, "/data/media/", 12) == 0)) ||
             strncmp(entryname, "/data/data/com.google.android.music/files", 41) ==0 )
 			continue;
 
@@ -1098,10 +1101,10 @@ int restorecon_from_file(const char *filename)
 
         p1 = strtok(buf, "\t");
         p2 = strtok(NULL, "\t");
-        fprintf(stdout, "%s %s\n", p1, p2);
+        LOGI("%s %s\n", p1, p2);
         if (lsetfilecon(p1, p2) < 0) {
             LOGW("(restorecon_from_file)can't setfilecon %s\n", p1);
-            ret = -1;
+            ret = 1;
         }
     }
     fclose(f);
@@ -1119,7 +1122,7 @@ int restorecon_recursive(const char *pathname)
 
     if (selinux_android_restorecon(pathname) < 0) {
         LOGW("Restorecon: error restoring context for %s.\n", pathname);
-        ret = -1;
+        ret = 1;
     }
 
     //skip symlink
@@ -1138,7 +1141,7 @@ int restorecon_recursive(const char *pathname)
             continue;
         if (asprintf(&entryname, "%s/%s", pathname, entry->d_name) == -1)
             continue;
-        if (strncmp(entryname, "/data/media/", 12) == 0 ||
+        if ((is_data_media() && (strncmp(entryname, "/data/media/", 12) == 0)) ||
             strncmp(entryname, "/data/data/com.google.android.music/files", 41) ==0 )
 			continue;
 
